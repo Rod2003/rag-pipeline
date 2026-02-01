@@ -5,6 +5,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from backend.config import SIMILARITY_THRESHOLD
 from backend.embeddings import embed_texts
 from backend.generation import generate_answer
 from backend.ingestion import chunk_text, extract_text_from_pdf
@@ -140,8 +141,19 @@ async def query(req: QueryRequest):
     )
 
     reranked = rerank_by_semantic(rrf_results, query_embedding, _chunks_cache, top_k=5)
-    context_chunks = [_chunks_cache[idx] for idx, _ in reranked]
+    if not reranked:
+        return {
+            "answer": "Insufficient evidence. No relevant passages were found in the knowledge base.",
+            "sources": [],
+        }
+    best_score = reranked[0][1]
+    if best_score < SIMILARITY_THRESHOLD:
+        return {
+            "answer": "Insufficient evidence. The retrieved passages do not meet the relevance threshold.",
+            "sources": [],
+        }
 
+    context_chunks = [_chunks_cache[idx] for idx, _ in reranked]
     try:
         answer = generate_answer(question, context_chunks)
     except (ValueError, Exception) as e:

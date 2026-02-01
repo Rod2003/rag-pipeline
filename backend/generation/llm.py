@@ -3,7 +3,9 @@ from backend.config import MISTRAL_API_KEY
 
 CHAT_MODEL = "mistral-small-latest"
 
-RAG_PROMPT = """You are a helpful assistant. Answer the question based ONLY on the following context. If the context does not contain the answer, say "I don't have enough information to answer that."
+RAG_PROMPT = """You are a helpful assistant. Use the following context to answer the question. Synthesize and summarize the relevant information from the context. Be concise but thorough.
+
+Only say you don't have enough information if the context is completely irrelevant to the question or empty. If the context is related (even partially), use it to give a helpful answer.
 
 Context:
 {context}

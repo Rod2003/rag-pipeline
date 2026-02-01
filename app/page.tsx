@@ -1,6 +1,7 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import ReactMarkdown from "react-markdown"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -12,14 +13,70 @@ import {
 import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
+import * as AccordionPrimitive from "@radix-ui/react-accordion"
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+} from "@/components/ui/accordion"
+import { ChevronRightIcon, Trash2Icon } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
+type Source = { source_file: string; page: number }
+
 type Message = {
   role: "user" | "assistant"
   content: string
-  sources?: { source_file: string; page: number }[]
+  sources?: Source[]
+}
+
+function SourcesList({ sources }: { sources: Source[] }) {
+  const byFile = sources.reduce<Record<string, number[]>>((acc, s) => {
+    const file = s.source_file ?? "Unknown"
+    if (!acc[file]) acc[file] = []
+    const page = s.page ?? 0
+    if (!acc[file].includes(page)) acc[file].push(page)
+    return acc
+  }, {})
+  Object.keys(byFile).forEach((f) => byFile[f].sort((a, b) => a - b))
+  const entries = Object.entries(byFile)
+
+  return (
+    <Accordion type="single" collapsible className="w-full">
+      {entries.map(([file, pages]) => (
+        <AccordionItem
+          key={file}
+          value={file}
+          className="border-0 [&[data-state=open]>*:last-child]:pb-0"
+        >
+          <AccordionPrimitive.Header className="flex">
+            <AccordionPrimitive.Trigger className="flex flex-1 items-center gap-2 py-2 text-left outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded [&[data-state=open]>svg]:rotate-90">
+              <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-200" />
+              <span className="text-xs font-medium text-foreground/90">
+                {file}
+              </span>
+            </AccordionPrimitive.Trigger>
+          </AccordionPrimitive.Header>
+          <AccordionContent className="pb-2 pt-0">
+            <div className="flex flex-wrap gap-1 pl-5">
+              {pages.map((p) => (
+                <Badge
+                  key={`${file}-${p}`}
+                  variant="secondary"
+                  className="text-xs"
+                >
+                  p.{p}
+                </Badge>
+              ))}
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      ))}
+    </Accordion>
+  )
 }
 
 export default function Home() {
@@ -29,6 +86,26 @@ export default function Home() {
   const [queryLoading, setQueryLoading] = useState(false)
   const [ingestLoading, setIngestLoading] = useState(false)
   const [ingestStatus, setIngestStatus] = useState<string | null>(null)
+  const [ingestedFiles, setIngestedFiles] = useState<string[]>([])
+  const [removingFile, setRemovingFile] = useState<string | null>(null)
+
+  const fetchFiles = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/files`)
+      if (res.ok) {
+        const data = await res.json()
+        setIngestedFiles(data.files ?? [])
+      }
+    } catch {
+      setIngestedFiles([])
+    }
+  }
+
+  useEffect(() => {
+    fetchFiles()
+  }, [])
+
+  const hasIngested = ingestedFiles.length > 0
 
   const handleIngest = async () => {
     const fileInput = fileInputRef.current
@@ -54,6 +131,7 @@ export default function Home() {
       setIngestStatus(
         `Ingested ${data.chunks_created} chunks from ${data.files?.length ?? 0} file(s).`
       )
+      await fetchFiles()
       fileInput.value = ""
     } catch (e) {
       setIngestStatus(
@@ -61,6 +139,20 @@ export default function Home() {
       )
     } finally {
       setIngestLoading(false)
+    }
+  }
+
+  const handleRemoveFile = async (filename: string) => {
+    setRemovingFile(filename)
+    try {
+      const res = await fetch(`${API_BASE}/files/${encodeURIComponent(filename)}`, {
+        method: "DELETE",
+      })
+      if (res.ok) {
+        await fetchFiles()
+      }
+    } finally {
+      setRemovingFile(null)
     }
   }
 
@@ -106,11 +198,22 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <header className="border-b px-6 py-4">
-        <h1 className="text-xl font-semibold">RAG Pipeline</h1>
-        <p className="text-sm text-muted-foreground">
-          Upload PDFs and ask questions about your documents
-        </p>
+      <header className="flex items-center justify-between gap-4 border-b px-6 py-4">
+        <div>
+          <h1 className="text-xl font-semibold">RAG Pipeline</h1>
+          <p className="text-sm text-muted-foreground">
+            Upload PDFs and ask questions about your documents
+          </p>
+        </div>
+        {(hasIngested || messages.length > 0) && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setMessages([])}
+          >
+            New Chat
+          </Button>
+        )}
       </header>
 
       <main className="flex flex-1 flex-col gap-6 overflow-hidden p-6 md:flex-row">
@@ -151,6 +254,32 @@ export default function Home() {
                 {ingestStatus}
               </p>
             )}
+            {ingestedFiles.length > 0 && (
+              <div className="space-y-1">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Ingested files
+                </span>
+                <ul className="space-y-1">
+                  {ingestedFiles.map((file) => (
+                    <li
+                      key={file}
+                      className="group flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/50"
+                    >
+                      <span className="truncate text-foreground/90">{file}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFile(file)}
+                        disabled={removingFile === file}
+                        className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                        aria-label={`Remove ${file}`}
+                      >
+                        <Trash2Icon className="size-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -179,19 +308,22 @@ export default function Home() {
                         : "bg-muted"
                     )}
                   >
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                    {msg.role === "user" ? (
+                      <p className="whitespace-pre-wrap">{msg.content}</p>
+                    ) : (
+                      <div className="markdown-content [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_pre]:text-xs">
+                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      </div>
+                    )}
                     {msg.role === "assistant" &&
                       msg.sources &&
                       msg.sources.length > 0 && (
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          Sources:{" "}
-                          {msg.sources
-                            .map(
-                              (s) =>
-                                `${s.source_file ?? "?"} p.${s.page ?? "?"}`
-                            )
-                            .join(", ")}
-                        </p>
+                        <div className="mt-3 space-y-2 border-t border-border/50 pt-3">
+                          <span className="text-xs font-medium text-muted-foreground">
+                            Sources
+                          </span>
+                          <SourcesList sources={msg.sources} />
+                        </div>
                       )}
                   </div>
                 ))}

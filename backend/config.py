@@ -15,3 +15,6 @@ MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 # Chunking defaults
 CHUNK_SIZE = 400  # ~512 tokens
 CHUNK_OVERLAP = 50  # ~50 tokens
+
+# Retrieval: refuse to answer if best chunk similarity below this
+SIMILARITY_THRESHOLD = 0.4

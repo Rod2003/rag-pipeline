@@ -17,11 +17,14 @@ export const metadata: Metadata = {
   description: "Retrieval-augmented generation for PDF knowledge base",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
+  params,
 }: Readonly<{
   children: React.ReactNode;
+  params?: Promise<Record<string, string | string[]>>;
 }>) {
+  if (params) await params;
   return (
     <html lang="en">
       <body
