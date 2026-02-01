@@ -22,7 +22,7 @@ def embed_texts(texts: list[str], api_key: str | None = None) -> list[list[float
 
     for i in range(0, len(texts), _BATCH_SIZE):
         batch = texts[i : i + _BATCH_SIZE]
-        response = client.embeddings.create(model=EMBED_MODEL, input=batch)
+        response = client.embeddings.create(model=EMBED_MODEL, inputs=batch)
         for item in sorted(response.data, key=lambda x: x.index):
             embeddings.append(item.embedding)
 
