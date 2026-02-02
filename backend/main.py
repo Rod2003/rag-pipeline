@@ -10,6 +10,7 @@ from backend.embeddings import embed_texts
 from backend.generation import generate_answer
 from backend.ingestion import chunk_text, extract_text_from_pdf
 from backend.query import detect_intent, transform_query
+from backend.query.refusal import check_refusal
 from backend.query.intent import Intent
 from backend.retrieval import rerank_by_semantic
 from backend.search import hybrid_search
@@ -22,7 +23,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -121,6 +122,10 @@ async def query(req: QueryRequest):
             "answer": "I'm here to help with questions about your uploaded documents. Try asking something like 'What does this document say about X?' or 'Summarize the main points.'",
             "sources": [],
         }
+
+    refusal = check_refusal(question)
+    if refusal.should_refuse:
+        return {"answer": refusal.message, "sources": []}
 
     # knowledge_query: run full RAG pipeline
     if not _chunks_cache:
