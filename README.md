@@ -4,7 +4,7 @@ A Retrieval-Augmented Generation (RAG) system for querying PDF documents. Upload
 
 ## System Design
 
-*diagram here*
+<img width="3775" height="4980" alt="rag-pipeline-diagram" src="https://github.com/user-attachments/assets/a08ce94d-7cb4-4dc1-be3a-0abff086719a" />
 
 ### Architecture Overview
 
