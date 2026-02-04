@@ -56,6 +56,36 @@ The system refuses to process queries that:
 - **PII**: Appear to contain SSN, credit card numbers, or email addresses.
 - **Legal/Medical**: Request legal or medical advice, with a disclaimer to consult qualified professionals.
 
+---
+
+## Code Structure & Implementation
+
+This section maps the system design to the codebase and notes design choices made in the implementation.
+
+### Backend Layout
+
+| Area | Path | Role |
+|------|------|------|
+| API & orchestration | `backend/main.py` | FastAPI app, CORS, ingest/query/files/health routes; in-memory chunk cache and BM25 index; startup/ingest reload index from disk. |
+| Config | `backend/config.py` | `.env` loaded from project root; `DATA_DIR`, `CHUNK_SIZE`, `CHUNK_OVERLAP`, `SIMILARITY_THRESHOLD`, `MISTRAL_API_KEY`. |
+| Ingestion | `backend/ingestion/` | `pdf_extractor.py`: PyMuPDF extraction, validation, text normalization. `chunker.py`: `Chunk` dataclass; sentence-boundary chunking with overlap. |
+| Embeddings | `backend/embeddings/mistral_client.py` | Mistral `mistral-embed`; batches of 32 for reliability. |
+| Search | `backend/search/` | `semantic.py`: cosine similarity (NumPy). `keyword.py`: in-memory BM25 (`k1=1.5`, `b=0.75`). `hybrid.py`: RRF merge (`k=60`), top-k 20. |
+| Retrieval | `backend/retrieval/rerank.py` | Re-ranks RRF results by semantic score; returns top-5. |
+| Query pipeline | `backend/query/` | `intent.py`: rule-based greeting / general_chat / knowledge_query. `refusal.py`: PII regex + legal/medical keywords. `transform.py`: acronym expansion + definition-style query rewrites. |
+| Generation | `backend/generation/llm.py` | Mistral chat (`mistral-small-latest`), single RAG prompt, `temperature=0.2`; context formatted with `[file p.N]: text`. |
+| Storage | `backend/storage/store.py` | Single JSON file (`backend/data/chunks.json`); save/load/replace chunk records with optional embeddings. |
+
+### Design Considerations
+
+- **In-memory index**: Chunks and BM25 are kept in process and reloaded on startup and after every ingest or file delete. This avoids a vector DB and keeps the stack simple; scale limits are process memory and single-file JSON write throughput.
+- **Query flow order**: Intent is resolved first (greeting → canned reply; general_chat → redirect; else knowledge path). Refusal runs only for knowledge-style queries. Then query transform, hybrid search, rerank, threshold check, and finally generation. This order avoids calling the embedding/LLM APIs for greetings or refused queries.
+- **Chunking**: Sentences are split on `.!?` and newlines; long segments are split by words with a max part length. Overlap is implemented by carrying the last few sentences into the next chunk so that span boundaries are less likely to cut mid-context.
+- **Hybrid search**: Semantic and BM25 each return top-20; RRF merges ranks with `k=60`. Rerank then uses semantic similarity only over that merged set and keeps top-5, so keyword hits can “boost” a doc into the rerank pool.
+- **Similarity threshold**: Applied after rerank. If the best reranked chunk score is below `SIMILARITY_THRESHOLD` (0.4), the API returns “Insufficient evidence” and does not call the LLM, reducing cost and hallucination risk.
+- **File list and delete**: `GET /files` derives the list of ingested source files from chunk metadata. `DELETE /files/{filename}` filters out chunks with that `source_file`, writes the remaining records via `ChunkStore.replace_chunks`, then reloads the in-memory index so subsequent queries see the update.
+- **Frontend**: Next.js app in `app/page.tsx`; `API_BASE` from `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`). Chat state is local (no backend session). Ingested files are listed from `GET /files`; remove calls `DELETE /files/{filename}`. Assistant answers are rendered as Markdown; sources are grouped by file and shown as an accordion with page badges.
+
 ## How to Run
 
 ### Prerequisites

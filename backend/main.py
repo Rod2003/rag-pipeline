@@ -171,6 +171,28 @@ async def query(req: QueryRequest):
     return {"answer": answer, "sources": sources}
 
 
+@app.get("/files")
+async def list_files():
+    """list source filenames that have been ingested."""
+    store = ChunkStore()
+    chunks = store.load_chunks()
+    files = sorted({c.get("source_file") for c in chunks if c.get("source_file")})
+    return {"files": files}
+
+
+@app.delete("/files/{filename:path}")
+async def remove_file(filename: str):
+    """remove all chunks for the given source file from the knowledge base."""
+    store = ChunkStore()
+    chunks = store.load_chunks()
+    remaining = [c for c in chunks if c.get("source_file") != filename]
+    if len(remaining) == len(chunks):
+        raise HTTPException(status_code=404, detail=f"No ingested file named {filename!r}")
+    store.replace_chunks(remaining)
+    _load_index()
+    return {"status": "ok", "removed": filename}
+
+
 @app.get("/health")
 async def health():
     """health check"""

@@ -35,3 +35,8 @@ class ChunkStore:
             return []
         with open(self.chunks_path, encoding="utf-8") as f:
             return json.load(f)
+
+    def replace_chunks(self, records: list[dict]) -> None:
+        """overwrite storage with a list of chunk records (e.g. after filtering)."""
+        with open(self.chunks_path, "w", encoding="utf-8") as f:
+            json.dump(records, f, indent=2, ensure_ascii=False)
